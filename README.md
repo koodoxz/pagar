@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/pagar_banner.jpg" alt="Pagar Agentic Tool-Call Firewall & Rollback Engine" width="680">
+</p>
+
 # Pagar — Agentic Tool-Call Firewall, Secret Exfiltration Guard & Atomic Blast-Radius Rollback Engine
 
 [![CI](https://github.com/koodoxz/pagar/actions/workflows/ci.yml/badge.svg)](https://github.com/koodoxz/pagar/actions/workflows/ci.yml)
@@ -81,3 +85,4 @@ Unlocking **Enterprise Pro (`ENTERPRISE_PRO_V1`)** via the official [Agensi.io P
 ## License
 
 Dual-licensed under `Apache-2.0 OR MIT` for the core engine; the encrypted Enterprise Pro signature vault is unlocked via a commercial Agensi.io license key.
+
