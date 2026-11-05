@@ -2,6 +2,7 @@
 
 use pagar_policy::{LicenseError, LicenseTier};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VerdictAction {
@@ -18,6 +19,8 @@ pub struct FirewallVerdict {
     pub receipt_sha256: String,
 }
 
+const COMMUNITY_DESTRUCTIVE_PATTERNS: &[&str] = &["rm -rf", "del /s /q", "format-volume"];
+
 pub struct FirewallEngine {
     tier: LicenseTier,
     inspections_run: usize,
@@ -31,6 +34,14 @@ impl FirewallEngine {
         }
     }
 
+    pub fn tier(&self) -> &LicenseTier {
+        &self.tier
+    }
+
+    pub fn inspections_run(&self) -> usize {
+        self.inspections_run
+    }
+
     pub fn tier_name(&self) -> &'static str {
         if self.tier.is_pro() {
             "ENTERPRISE_PRO_V1"
@@ -40,19 +51,155 @@ impl FirewallEngine {
     }
 
     pub fn inspect_command(&mut self, command: &str) -> Result<FirewallVerdict, LicenseError> {
-        let _ = command;
-        Err(LicenseError::InvalidFormat)
+        self.tier.enforce_inspection_quota(self.inspections_run)?;
+        self.inspections_run += 1;
+
+        let normalized = command.to_ascii_lowercase();
+        let mut matched_rules = Vec::new();
+
+        match &self.tier {
+            LicenseTier::Community => {
+                for pat in COMMUNITY_DESTRUCTIVE_PATTERNS {
+                    if normalized.contains(pat) {
+                        matched_rules.push(format!("COMM-CMD:{pat}"));
+                    }
+                }
+            }
+            LicenseTier::EnterprisePro(pack) => {
+                for pat in &pack.destructive_patterns {
+                    if normalized.contains(&pat.to_ascii_lowercase()) {
+                        matched_rules.push(format!("PRO-CMD:{pat}"));
+                    }
+                }
+                for inj in &pack.injection_signatures {
+                    if normalized.contains(&inj.to_ascii_lowercase()) {
+                        matched_rules.push(format!("PRO-INJ:{inj}"));
+                    }
+                }
+            }
+        }
+
+        let entropy = shannon_entropy_millibits(command);
+        let action = if matched_rules.is_empty() {
+            VerdictAction::Allow
+        } else {
+            VerdictAction::Block
+        };
+        let receipt_sha256 = compute_verdict_receipt(self.tier_name(), &action, command, &matched_rules);
+
+        Ok(FirewallVerdict {
+            action,
+            tier: self.tier_name().to_string(),
+            matched_rules,
+            shannon_entropy_bits: entropy,
+            receipt_sha256,
+        })
     }
 
     pub fn scan_secrets(&mut self, payload: &str) -> Result<FirewallVerdict, LicenseError> {
-        let _ = payload;
-        Err(LicenseError::InvalidFormat)
+        self.tier.enforce_inspection_quota(self.inspections_run)?;
+        self.inspections_run += 1;
+
+        let mut matched_rules = Vec::new();
+        let normalized = payload.to_ascii_lowercase();
+
+        match &self.tier {
+            LicenseTier::Community => {
+                if payload.contains("AKIA") {
+                    matched_rules.push("COMM-SEC-01:AWS Access Key".to_string());
+                }
+            }
+            LicenseTier::EnterprisePro(pack) => {
+                for rule in &pack.secret_rules {
+                    if let Some(idx) = payload.find(&rule.prefix) {
+                        let tail = &payload[idx..];
+                        let token_len = tail
+                            .split(|c: char| c.is_whitespace() || c == '"' || c == '\'')
+                            .next()
+                            .map(|s| s.len())
+                            .unwrap_or(0);
+                        if token_len >= rule.min_len || payload[idx..].len() >= rule.min_len {
+                            matched_rules.push(format!("{}:{}", rule.id, rule.name));
+                        }
+                    }
+                }
+                for inj in &pack.injection_signatures {
+                    if normalized.contains(&inj.to_ascii_lowercase()) {
+                        matched_rules.push(format!("PRO-INJ:{inj}"));
+                    }
+                }
+            }
+        }
+
+        let entropy = shannon_entropy_millibits(payload);
+        let action = if matched_rules.is_empty() {
+            VerdictAction::Allow
+        } else {
+            VerdictAction::Block
+        };
+        let receipt_sha256 = compute_verdict_receipt(self.tier_name(), &action, payload, &matched_rules);
+
+        Ok(FirewallVerdict {
+            action,
+            tier: self.tier_name().to_string(),
+            matched_rules,
+            shannon_entropy_bits: entropy,
+            receipt_sha256,
+        })
     }
 }
 
+/// Computes Shannon entropy in millibits per byte (`bits * 1000`, integer math for determinism).
 pub fn shannon_entropy_millibits(input: &str) -> u32 {
-    let _ = input;
-    0
+    let bytes = input.as_bytes();
+    if bytes.is_empty() {
+        return 0;
+    }
+    let mut counts = [0usize; 256];
+    for &b in bytes {
+        counts[b as usize] += 1;
+    }
+    let len = bytes.len() as f64;
+    let mut entropy = 0.0f64;
+    for &c in &counts {
+        if c > 0 {
+            let p = (c as f64) / len;
+            entropy -= p * p.log2();
+        }
+    }
+    (entropy * 1000.0).round() as u32
+}
+
+fn compute_verdict_receipt(
+    tier: &str,
+    action: &VerdictAction,
+    input: &str,
+    matched_rules: &[String],
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"NUSANTARA-PAGAR-VERDICT-V1:");
+    hasher.update(tier.as_bytes());
+    hasher.update(match action {
+        VerdictAction::Allow => b":ALLOW:",
+        VerdictAction::Block => b":BLOCK:",
+    });
+    hasher.update(input.as_bytes());
+    for r in matched_rules {
+        hasher.update(b":");
+        hasher.update(r.as_bytes());
+    }
+    let digest = hasher.finalize();
+    hex_encode(&digest)
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -70,6 +217,7 @@ mod tests {
         let v1 = engine.inspect_command("git push --force origin main").unwrap();
         assert_eq!(v1.action, VerdictAction::Block);
         assert!(!v1.matched_rules.is_empty());
+        assert_eq!(v1.receipt_sha256.len(), 64);
 
         let v2 = engine.inspect_command("psql -c 'DROP TABLE users;'").unwrap();
         assert_eq!(v2.action, VerdictAction::Block);
@@ -107,4 +255,3 @@ mod tests {
         assert!(matches!(err, LicenseError::CommunityQuotaExceeded { .. }));
     }
 }
-

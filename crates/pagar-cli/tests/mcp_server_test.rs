@@ -52,5 +52,6 @@ fn mcp_server_lists_tools_and_enforces_firewall_and_pro_tier() {
     assert!(line.contains("ENTERPRISE_PRO_V1"));
 
     let _ = child.kill();
+    let _ = child.wait();
 }
 
