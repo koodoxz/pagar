@@ -1,0 +1,26 @@
+[package]
+name = "pagar-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI and stdio MCP server for Nusantara Pagar Workspace Firewall & Atomic Rollback Engine"
+
+[[bin]]
+name = "pagar"
+path = "src/main.rs"
+
+[dependencies]
+pagar-policy.workspace = true
+pagar-firewall.workspace = true
+pagar-vault.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+

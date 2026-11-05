@@ -1,0 +1,16 @@
+[package]
+name = "pagar-firewall"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pre-execution shell/SQL/git tool-call firewall, Shannon entropy secret scanner, and prompt injection guard"
+
+[dependencies]
+pagar-policy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+
