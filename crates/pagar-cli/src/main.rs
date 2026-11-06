@@ -171,6 +171,12 @@ fn run_mcp_server(tier: LicenseTier) {
                                     "command": { "type": "string" }
                                 },
                                 "required": ["command"]
+                            },
+                            "annotations": {
+                                "readOnlyHint": true,
+                                "destructiveHint": false,
+                                "idempotentHint": true,
+                                "openWorldHint": false
                             }
                         },
                         {
@@ -182,6 +188,12 @@ fn run_mcp_server(tier: LicenseTier) {
                                     "payload": { "type": "string" }
                                 },
                                 "required": ["payload"]
+                            },
+                            "annotations": {
+                                "readOnlyHint": true,
+                                "destructiveHint": false,
+                                "idempotentHint": true,
+                                "openWorldHint": false
                             }
                         },
                         {
@@ -198,6 +210,12 @@ fn run_mcp_server(tier: LicenseTier) {
                                     }
                                 },
                                 "required": ["scope_id", "workspace_root", "allowed_files"]
+                            },
+                            "annotations": {
+                                "readOnlyHint": false,
+                                "destructiveHint": false,
+                                "idempotentHint": true,
+                                "openWorldHint": false
                             }
                         },
                         {
@@ -210,6 +228,12 @@ fn run_mcp_server(tier: LicenseTier) {
                                     "auto_rollback": { "type": "boolean" }
                                 },
                                 "required": ["scope_id", "auto_rollback"]
+                            },
+                            "annotations": {
+                                "readOnlyHint": false,
+                                "destructiveHint": true,
+                                "idempotentHint": false,
+                                "openWorldHint": false
                             }
                         },
                         {
@@ -218,6 +242,12 @@ fn run_mcp_server(tier: LicenseTier) {
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {}
+                            },
+                            "annotations": {
+                                "readOnlyHint": true,
+                                "destructiveHint": false,
+                                "idempotentHint": true,
+                                "openWorldHint": false
                             }
                         }
                     ]
@@ -341,5 +371,46 @@ fn run_mcp_server(tier: LicenseTier) {
 
         let _ = writeln!(stdout, "{}", serde_json::to_string(&response).unwrap());
         let _ = stdout.flush();
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pagar_tools_annotations_and_schema() {
+        let tools_json = json!([
+            {
+                "name": "pagar_inspect_command",
+                "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+            },
+            {
+                "name": "pagar_scan_secrets",
+                "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+            },
+            {
+                "name": "pagar_lock_scope",
+                "annotations": { "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+            },
+            {
+                "name": "pagar_audit_and_rollback",
+                "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false }
+            },
+            {
+                "name": "pagar_audit_self",
+                "annotations": { "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+            }
+        ]);
+        let tools = tools_json.as_array().unwrap();
+        assert_eq!(tools.len(), 5);
+        for t in tools {
+            let ann = t.get("annotations").unwrap();
+            assert!(ann.get("readOnlyHint").unwrap().is_boolean());
+            assert!(ann.get("destructiveHint").unwrap().is_boolean());
+            assert!(ann.get("idempotentHint").unwrap().is_boolean());
+            assert!(ann.get("openWorldHint").unwrap().is_boolean());
+        }
     }
 }
